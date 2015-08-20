@@ -1,0 +1,327 @@
+#!/bin/bash
+MYPWD="`pwd`"
+THIS="`pwd`/my-workstation"
+
+DOTFILES_GIT="https://github.com/blufor/dotfiles.git"
+
+############################################################################################################
+
+REPOS=`cat <<REPO_DEF
+# FORMAT: <project_group> <repo_url>
+my      git@github.com:blufor/escli.git
+my      git@github.com:blufor/bootbuddy.git
+my      git@github.com:blufor/dotfiles.git
+my      git@github.com:blufor/jy.git
+mother  git@github.com:prozeta/mother.git
+mother  git@github.com:prozeta/mother-baseimage.git
+mother  git@github.com:prozeta/mother-puppetmaster.git
+mother  git@github.com:prozeta/mother-puppetdb.git
+mother  git@github.com:prozeta/mother-logger.git
+mother  git@github.com:prozeta/mother-tftp.git
+mother  git@github.com:prozeta/mother-logger.git
+notifu  git@github.com:prozeta/notifu.git
+puppet  git@gitlab.prz:devops/puppet.git
+puppet  git@gitlab.prz:devops/homedirs.git
+puppet  git@gitlab.prz:devops/hiera.git
+sensu   git@gitlab.prz:devops/sensu-checks.git
+sensu   git@gitlab.prz:devops/sensu-plugins.git
+REPO_DEF`
+
+PACKAGES=`cat <<PKG_DEF
+bridge-utils
+compton
+conky
+devilspie
+dropbox
+dzen2
+google-chrome-stable
+gnupg-agent
+gpgv2
+herbstluftwm
+libasound2-dev
+libavahi-client-dev
+libssl-dev
+libykclient3
+libyubikey0
+netcat-openbsd
+notify-osd
+pcsc-tools
+pcscd
+pinentry-gtk2
+pv
+rxvt-unicode-256color
+suckless-tools
+trayer
+vlan
+volumeicon-alsa
+ykneomgr
+yubikey-neo-manager
+PKG_DEF`
+
+AUDIO_default_pa=`cat <<AUDIO_default_pa
+.nofail
+.fail
+load-module module-device-restore
+load-module module-stream-restore
+load-module module-card-restore
+load-module module-augment-properties
+load-module module-switch-on-port-available
+load-module module-alsa-sink device=hw:1,2
+.ifexists module-udev-detect.so
+load-module module-udev-detect
+.else
+load-module module-detect
+.endif
+.ifexists module-android-audio-hal.so
+load-module module-android-audio-hal
+.endif
+.ifexists module-jackdbus-detect.so
+.nofail
+load-module module-jackdbus-detect channels=2
+.fail
+.endif
+.ifexists module-bluetooth-policy.so
+load-module module-bluetooth-policy
+.endif
+.ifexists module-bluetooth-discover.so
+load-module module-bluetooth-discover
+.endif
+.ifexists module-esound-protocol-unix.so
+load-module module-esound-protocol-unix
+.endif
+load-module module-native-protocol-unix
+.ifexists module-gconf.so
+.nofail
+load-module module-gconf
+.fail
+.endif
+load-module module-default-device-restore
+load-module module-rescue-streams
+load-module module-always-sink
+load-module module-intended-roles
+load-module module-suspend-on-idle
+.ifexists module-console-kit.so
+load-module module-console-kit
+.endif
+.ifexists module-systemd-login.so
+load-module module-systemd-login
+.endif
+load-module module-position-event-sounds
+load-module module-filter-heuristics
+load-module module-filter-apply
+AUDIO_default_pa`
+
+AUDIO_daemon_conf=`cat <<AUDIO_daemon_conf
+daemonize = yes
+local-server-type = system
+resample-method = speex-float-1
+flat-volumes = no
+default-fragments = 8
+default-fragment-size-msec = 10
+deferred-volume-safety-margin-usec = 1
+AUDIO_daemon_conf`
+
+NET_interfaces_vantage=`cat <<NET_interfaces_vantage
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+  address 10.4.1.1
+  netmask 255.255.255.0
+  broadcast 10.4.1.255
+  gateway 10.4.1.254
+
+auto vlan3
+iface vlan3 inet static
+  address 10.4.0.4
+  netmask 255.255.255.0
+  broadcast 10.4.0.255
+  post-up /sbin/ip r a 95.173.208.0/21 via 10.4.0.254
+  post-up /sbin/ip r a 172.16.0.0/12 via 10.4.0.254
+  post-up /sbin/ip r a 192.168.0.0/24 via 10.4.0.254
+  post-up /sbin/ip r a 192.168.7.0/24 via 10.4.0.254
+  vlan_raw_device eth0
+
+auto vlan4
+iface vlan4 inet static
+  address 10.4.4.4
+  netmask 255.255.255.0
+  broadcast 10.4.4.255
+  vlan_raw_device eth0
+NET_interfaces_vantage
+`
+
+
+############################################################################################################
+
+apt_get () {
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -y $*
+}
+
+s () {
+  sudo -E $*
+}
+
+run () {
+  xterm -n $1 -e $THIS $1
+}
+
+#### BASE ##################################################################################################
+
+prepare () {
+  # fix sudoers
+  s perl -pi -e 's/^%sudo .*$/%sudo   ALL=\(ALL:ALL\) NOPASSWD: ALL/' /etc/sudoers
+  s gpasswd -a ${USER} sudo
+  s gpasswd -a ${USER} root
+  s gpasswd -a ${USER} adm
+  s gpasswd -a ${USER} admin
+  s gpasswd -a ${USER} pulse-access
+  apt_get update && apt_get dist-upgrade
+  apt_get install build-essential git python-software-properties wget curl
+}
+
+packages () {
+  # YubiKey repo
+  s add-apt-repository -y ppa:yubico/stable
+  # Notify-OSD repo
+  s add-apt-repository -y ppa:leolik/leolik
+  # Oracle Java repo
+  s add-apt-repository -y ppa:webupd8team/java
+  # Google Chrome repo
+  wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | s apt-key add -
+  echo "deb http://dl.google.com/linux/chrome/deb/ stable main" | s tee /etc/apt/sources.list.d/google-chrome.list
+  # Dropbox repo
+  apt-key adv --keyserver pgp.mit.edu --recv-keys 5044912E
+  echo "deb http://linux.dropbox.com/ubuntu/ `grep CODENAME /etc/lsb-release | cut -d= -f2` main" | s tee /etc/apt/sources.list.d/dropbox.list
+  apt_get update
+  apt_get install ${PACKAGES}
+}
+
+audio () {
+  # ALSA fix for SoundBlaster X-Fi HD USB
+  if (lsusb | grep -q 041e:3232); then
+    true
+    # TODO
+  fi
+  # PulseAudio system-wide
+  s cp audio/{default.pa,daemon.conf} /etc/pulseaudio
+  s perl -pi -e 's/^# *(start.*)$/\1/' /etc/init/pulseaudio.conf
+  s '( stop pulseaudio; sleep 5; pkill -f pulseaudio ) || true'
+  s start pulseaudio
+  # Shairport
+
+}
+
+network () {
+  s ifdown -a
+  s cp network/resolvconf /etc/resolvconf/resolv.conf.d/head
+  if [ -f "network/resolvconf-$(hostname -s)" ]; then s cp network/resolvconf-$(hostname -s) /etc/resolvconf/resolv.conf.d/base; fi
+  if [ -f "network/interfaces-$(hostname -s)" ]; then s cp network/interfaces-$(hostname -s) /etc/interfaces/resolv.conf.d/base; fi
+  s resolvconf -u
+  s ifup -a
+}
+
+home () {
+  dir="${HOME}/DEV/tmp/dotfiles"
+  if [ -d ${dir} ]; then
+    git clone ${DOTFILES_GIT} ${dir}
+  else
+    cd ${dir} && git pull && cd ${MYPWD}
+  fi
+  cd ${dir} && ./install.sh && cd ${MYPWD}
+  rm -rf ${dir}
+}
+
+#### ADDITIONAL ############################################################################################
+
+dev_workspace () {
+  projects=$"`awk '/^[^#]/ { print $1 }' <(echo "${REPOS}") | uniq`"
+  for project in ${projects}; do
+    mkdir -p ${HOME}/DEV/${project}
+    sources=`egrep "^${project}" <(echo "${REPOS}") | awk '/^[^#]/ { print $2 }'`
+    for source in ${sources}; do
+      dirname=`echo ${source} | awk -F: '{ print $2 }' | sed -re 's/.git$//' -e 's/.*+\///'`
+      if [ ! -d "${HOME}/DEV/${project}/${dirname}" ]; then
+        git clone ${source} ${HOME}/DEV/${project}/${dirname}
+      else
+        cd ${HOME}/DEV/${project}/${dirname} && git pull
+        cd ${OLDPWD}
+      fi
+    done
+  done
+}
+
+install_rvm () {
+  gpg --keyserver hkp://keys.gnupg.net --recv-keys 409B6B1796C275462A1703113804BB82D39DC0E3
+  curl -sSL https://get.rvm.io | bash
+  echo "rvm_autoupdate_flag=2" > ${HOME}/.rvmrc
+  echo "export rvm_max_time_flag=20" >> ${HOME}/.rvmrc
+  source ${HOME}/.rvm/scripts/rvm
+  rvm install 1.8.7
+  rvm install 1.9.3
+  rvm install 2.0.0
+  rvm install 2.1
+  rvm install 2.2.0
+  rvm default 2.2.0
+}
+
+install_java () {
+  s apt-get install oracle-java8-installer
+}
+
+
+#### MAIN ##################################################################################################
+
+mkdir -p ${HOME}/DEV/tmp
+mkdir -p ${HOME}/DEV/misc
+
+case $1 in
+  base )
+    run prepare
+    run packages
+    run audio
+    run network
+    run home
+    ;;
+  prepare )
+    prepare
+    ;;
+  packages )
+    packages
+    ;;
+  audio )
+    audio
+    ;;
+  network )
+    network
+    ;;
+  rvm )
+    install_rvm
+    ;;
+  java )
+    install_java
+    ;;
+  home )
+    home
+    ;;
+  dev )
+    dev_workspace
+    ;;
+  * )
+    echo -e "Usage: $0 [method]"
+    echo
+    echo -e '  base\t\t\twrapper for methods: prepare, packages, audio, network, home'
+    echo
+    echo -e '  prepare\t\tstuff like sudo config, update & basic utils install'
+    echo -e '  packages\t\tadd repos & install all needed DEBs'
+    echo -e '  audio\t\t\tconfigure ALSA, PulseAudio & Shairport'
+    echo -e '  network\t\tconfigure network interfaces & resolver'
+    echo -e '  home\t\t\tsetup environment'
+    echo
+    echo -e '  dev\t\t\tclone all configured repositories'
+    echo -e '  rvm\t\t\tinstall RVM and Rubies'
+    echo -e '  java\t\t\tinstall Oracle JDK 8'
+    ;;
+esac
+
