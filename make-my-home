@@ -1,5 +1,6 @@
 #!/bin/bash
 MYPWD="`pwd`"
+DEVDIR="devel"
 THIS="`pwd`/my-workstation"
 
 DOTFILES_GIT="https://github.com/blufor/dotfiles.git"
@@ -14,7 +15,13 @@ my      git@github.com:blufor/dotfiles.git
 my      git@github.com:blufor/jy.git
 mother  git@github.com:prozeta/mother.git
 mother  git@github.com:prozeta/mother-baseimage.git
+mother  git@github.com:prozeta/mother-dns.git
+mother  git@github.com:prozeta/mother-dhcp.git
+mother  git@github.com:prozeta/mother-consul.git
+mother  git@github.com:prozeta/mother-psql.git
+mother  git@github.com:prozeta/mother-registrator.git
 mother  git@github.com:prozeta/mother-puppetmaster.git
+mother  git@github.com:prozeta/mother-puppetca.git
 mother  git@github.com:prozeta/mother-puppetdb.git
 mother  git@github.com:prozeta/mother-logger.git
 mother  git@github.com:prozeta/mother-tftp.git
@@ -152,6 +159,18 @@ iface vlan4 inet static
 NET_interfaces_vantage
 `
 
+NET_interfaces_vanquish=`cat <<NET_interfaces_vanquish
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+  address 192.168.7.4
+  netmask 255.255.255.0
+  broadcast 192.168.7.255
+  gateway 192.168.7.1
+NET_interfaces_vanquish
+`
 
 ############################################################################################################
 
@@ -223,14 +242,17 @@ network () {
 }
 
 home () {
-  dir="${HOME}/DEV/tmp/dotfiles"
+  set -x
+  mkdir -p ${HOME}/${DEVDIR}
+  dir="${HOME}/${DEVDIR}/dotfiles"
   if [ -d ${dir} ]; then
-    git clone ${DOTFILES_GIT} ${dir}
-  else
     cd ${dir} && git pull && cd ${MYPWD}
+  else
+    git clone ${DOTFILES_GIT} ${dir}
   fi
   cd ${dir} && ./install.sh && cd ${MYPWD}
   rm -rf ${dir}
+  set +x
 }
 
 #### ADDITIONAL ############################################################################################
@@ -238,14 +260,14 @@ home () {
 dev_workspace () {
   projects=$"`awk '/^[^#]/ { print $1 }' <(echo "${REPOS}") | uniq`"
   for project in ${projects}; do
-    mkdir -p ${HOME}/DEV/${project}
+    mkdir -p ${HOME}/${DEVDIR}/${project}
     sources=`egrep "^${project}" <(echo "${REPOS}") | awk '/^[^#]/ { print $2 }'`
     for source in ${sources}; do
       dirname=`echo ${source} | awk -F: '{ print $2 }' | sed -re 's/.git$//' -e 's/.*+\///'`
-      if [ ! -d "${HOME}/DEV/${project}/${dirname}" ]; then
-        git clone ${source} ${HOME}/DEV/${project}/${dirname}
+      if [ ! -d "${HOME}/${DEVDIR}/${project}/${dirname}" ]; then
+        git clone ${source} ${HOME}/${DEVDIR}/${project}/${dirname}
       else
-        cd ${HOME}/DEV/${project}/${dirname} && git pull
+        cd ${HOME}/${DEVDIR}/${project}/${dirname} && git pull
         cd ${OLDPWD}
       fi
     done
@@ -273,8 +295,8 @@ install_java () {
 
 #### MAIN ##################################################################################################
 
-mkdir -p ${HOME}/DEV/tmp
-mkdir -p ${HOME}/DEV/misc
+mkdir -p ${HOME}/${DEVDIR}/tmp
+mkdir -p ${HOME}/${DEVDIR}/misc
 
 case $1 in
   base )
